@@ -8,7 +8,8 @@ use League\Flysystem\Adapter\Polyfill\StreamedCopyTrait;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use League\Flysystem\Util;
-use phpseclib3\Crypt\Common\PrivateKey;
+use phpseclib3\Crypt\Common\AsymmetricKey;
+use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Crypt\RSA;
 use phpseclib3\Net\SFTP;
 use phpseclib3\System\SSH\Agent;
@@ -242,11 +243,15 @@ class SftpAdapter extends AbstractFtpAdapter
         }
 
         // try double authentication, key is already given so now give password
-        if ($authentication instanceof RSA && $this->connection->login($this->getUsername(), $this->getPassword())) {
+        if ($authentication instanceof AsymmetricKey
+            && $this->connection->login($this->getUsername(), $this->getPassword())
+        ) {
             goto past_login;
         }
 
-        throw new ConnectionErrorException('Could not login with username: '.$this->getUsername().', host: '.$this->host);
+        throw new ConnectionErrorException(
+            'Could not login with username: '.$this->getUsername().', host: '.$this->host
+        );
 
         past_login:
 
@@ -290,7 +295,7 @@ class SftpAdapter extends AbstractFtpAdapter
     /**
      * Get the password, either the private key or a plain text password.
      *
-     * @return Agent|PrivateKey|string
+     * @return Agent|AsymmetricKey|string
      */
     public function getAuthentication()
     {
@@ -308,7 +313,7 @@ class SftpAdapter extends AbstractFtpAdapter
     /**
      * Get the private key with the password or private key contents.
      *
-     * @return PrivateKey
+     * @return AsymmetricKey
      */
     public function getPrivateKey()
     {
@@ -316,13 +321,7 @@ class SftpAdapter extends AbstractFtpAdapter
             $this->privateKey = file_get_contents($this->privateKey);
         }
 
-        $key = RSA::loadPrivateKey($this->privateKey);
-
-        if ($password = $this->getPassphrase()) {
-            $key->withPassword($password);
-        }
-
-        return $key;
+        return PublicKeyLoader::load($this->privateKey, $this->getPassphrase() ?: false);
     }
 
     /**
