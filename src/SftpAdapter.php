@@ -8,16 +8,18 @@ use League\Flysystem\Adapter\Polyfill\StreamedCopyTrait;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
 use League\Flysystem\Util;
-use phpseclib\Crypt\RSA;
-use phpseclib\Net\SFTP;
-use phpseclib\System\SSH\Agent;
+use phpseclib3\Crypt\Common\AsymmetricKey;
+use phpseclib3\Crypt\PublicKeyLoader;
+use phpseclib3\Crypt\RSA;
+use phpseclib3\Net\SFTP;
+use phpseclib3\System\SSH\Agent;
 
 class SftpAdapter extends AbstractFtpAdapter
 {
     use StreamedCopyTrait;
 
     /**
-     * @var SFTP
+     * @var SFTP|null
      */
     protected $connection;
 
@@ -237,11 +239,15 @@ class SftpAdapter extends AbstractFtpAdapter
         }
 
         // try double authentication, key is already given so now give password
-        if ($authentication instanceof RSA && $this->connection->login($this->getUsername(), $this->getPassword())) {
+        if ($authentication instanceof AsymmetricKey
+            && $this->connection->login($this->getUsername(), $this->getPassword())
+        ) {
             goto past_login;
         }
 
-        throw new ConnectionErrorException('Could not login with username: '.$this->getUsername().', host: '.$this->host);
+        throw new ConnectionErrorException(
+            'Could not login with username: '.$this->getUsername().', host: '.$this->host
+        );
 
         past_login:
 
@@ -256,7 +262,7 @@ class SftpAdapter extends AbstractFtpAdapter
      * @param string $publickey
      * @return string Hex formatted fingerprint, e.g. '88:76:75:96:c1:26:7c:dd:9f:87:50:db:ac:c4:a8:7c'.
      */
-    private function getHexFingerprintFromSshPublicKey ($publickey)
+    private function getHexFingerprintFromSshPublicKey($publickey)
     {
         $content = explode(' ', $publickey, 3);
         return implode(':', str_split(md5(base64_decode($content[1])), 2));
@@ -285,7 +291,7 @@ class SftpAdapter extends AbstractFtpAdapter
     /**
      * Get the password, either the private key or a plain text password.
      *
-     * @return Agent|RSA|string
+     * @return Agent|AsymmetricKey|string
      */
     public function getAuthentication()
     {
@@ -303,23 +309,15 @@ class SftpAdapter extends AbstractFtpAdapter
     /**
      * Get the private key with the password or private key contents.
      *
-     * @return RSA
+     * @return AsymmetricKey
      */
     public function getPrivateKey()
     {
-        if ("---" !== substr($this->privateKey, 0, 3) && is_file($this->privateKey)) {
+        if (strpos($this->privateKey, "---") !== 0 && is_file($this->privateKey)) {
             $this->privateKey = file_get_contents($this->privateKey);
         }
 
-        $key = new RSA();
-
-        if ($password = $this->getPassphrase()) {
-            $key->setPassword($password);
-        }
-
-        $key->loadKey($this->privateKey);
-
-        return $key;
+        return PublicKeyLoader::load($this->privateKey, $this->getPassphrase() ?: false);
     }
 
     /**
@@ -335,11 +333,11 @@ class SftpAdapter extends AbstractFtpAdapter
     }
 
     /**
-     * @return Agent|bool
+     * @return Agent
      */
     public function getAgent()
     {
-        if ( ! $this->agent instanceof Agent) {
+        if (!$this->agent instanceof Agent) {
             $this->agent = new Agent();
         }
 
@@ -393,7 +391,7 @@ class SftpAdapter extends AbstractFtpAdapter
      */
     protected function normalizeListingObject($path, array $object)
     {
-        $permissions = $this->normalizePermissions($object['permissions']);
+        $permissions = $this->normalizePermissions($object['mode']);
         $type = isset($object['type']) && ($object['type'] === 2) ?  'dir' : 'file';
 
         $timestamp = $object['mtime'];
@@ -518,9 +516,7 @@ class SftpAdapter extends AbstractFtpAdapter
      */
     public function delete($path)
     {
-        $connection = $this->getConnection();
-
-        return $connection->delete($path);
+        return $this->getConnection()->delete($path);
     }
 
     /**
@@ -528,9 +524,7 @@ class SftpAdapter extends AbstractFtpAdapter
      */
     public function rename($path, $newpath)
     {
-        $connection = $this->getConnection();
-
-        return $connection->rename($path, $newpath);
+        return $this->getConnection()->rename($path, $newpath);
     }
 
     /**
@@ -538,9 +532,7 @@ class SftpAdapter extends AbstractFtpAdapter
      */
     public function deleteDir($dirname)
     {
-        $connection = $this->getConnection();
-
-        return $connection->delete($dirname, true);
+        return $this->getConnection()->delete($dirname, true);
     }
 
     /**
@@ -625,9 +617,7 @@ class SftpAdapter extends AbstractFtpAdapter
             throw new InvalidArgumentException('Unknown visibility: '.$visibility);
         }
 
-        $connection = $this->getConnection();
-
-        return $connection->chmod($this->{'perm'.$visibility}, $path);
+        return $this->getConnection()->chmod($this->{'perm'.$visibility}, $path);
     }
 
     /**
