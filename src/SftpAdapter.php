@@ -557,7 +557,7 @@ class SftpAdapter extends AbstractFtpAdapter
 
         $result = Util::map($info, $this->statMap);
         $result['type'] = $info['type'] === NET_SFTP_TYPE_DIRECTORY ? 'dir' : 'file';
-        $result['visibility'] = $info['permissions'] & $this->permPublic ? 'public' : 'private';
+        $result['visibility'] = $info['mode'] & $this->permPublic ? 'public' : 'private';
 
         return $result;
     }
